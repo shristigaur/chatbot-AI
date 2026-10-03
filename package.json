@@ -1,0 +1,13 @@
+{
+  "name": "lumina-chat",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "start:prod": "concurrently \"npm --prefix server run start:prod\" \"npm --prefix client run start:prod\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
