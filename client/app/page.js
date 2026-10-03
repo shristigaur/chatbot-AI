@@ -7,11 +7,25 @@ import dynamic from 'next/dynamic';
 import MessageErrorBoundary from '../components/MessageErrorBoundary';
 import CharacterAvatar from '../components/CharacterAvatar';
 import useSpeech from '../hooks/useSpeech';
+import { apiUrl, assertEventStream, request, warmApi } from '../lib/api';
 import { getGenerationTheme } from '../lib/themes';
 import { toText } from '../lib/toText';
 
+function BackendStatus() {
+  const [status, setStatus] = useState('Waking up');
+  useEffect(() => { let cancelled = false; warmApi().then(() => { if (!cancelled) setStatus('Connected'); }).catch(() => { if (!cancelled) setStatus('Unreachable'); }); return () => { cancelled = true; }; }, []);
+  return <div className={`backend-status backend-${status.toLowerCase()}`}><span className="status-dot">●</span> Backend: {status}</div>;
+}
+
 const MarkdownContent = dynamic(() => import('../components/MarkdownContent'), { ssr: false, loading: () => <span className="markdown-loading">Loading response…</span> });
 const FloatingCreatures = dynamic(() => import('../components/FloatingCreatures'), { ssr: false });
+const API = { toString: () => apiUrl('/').replace(/\/+$/, '') };
+
+async function fetch(url, options) {
+  const response = await globalThis.fetch(url, options);
+  if (String(url).includes('/chat/stream')) await assertEventStream(response);
+  return response;
+}
 
 function FloatingCreaturesPortal({ generation }) {
   const [mounted, setMounted] = useState(false);
@@ -20,7 +34,6 @@ function FloatingCreaturesPortal({ generation }) {
   return createPortal(<FloatingCreatures generation={generation || 'Adult'} />, document.body);
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 const filters = ['Children', 'Teenagers', 'Adult', 'Young Man', 'Old/Senior', 'Gen Z', 'Gen Alpha'];
 const themes = { aurora: 'theme-aurora', citrus: 'theme-citrus', linen: 'theme-linen', ocean: 'theme-ocean', children: 'theme-children', teenagers: 'theme-teenagers', adult: 'theme-adult', 'young-man': 'theme-young-man', senior: 'theme-senior', 'gen-z': 'theme-gen-z', 'gen-alpha': 'theme-gen-alpha' };
 const fallbackCharacters = [
@@ -36,12 +49,6 @@ function anonymousId() {
   let id = localStorage.getItem('lumina-anonymous-id');
   if (!id) { id = crypto.randomUUID(); localStorage.setItem('lumina-anonymous-id', id); }
   return id;
-}
-
-async function request(path, options = {}) {
-  const response = await fetch(`${API}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-anonymous-id': anonymousId(), ...options.headers } });
-  if (!response.ok) throw new Error(toText((await response.json()).error) || 'Something went wrong');
-  return response.json();
 }
 
 function MessageBubbleContent({ message, onSpeak, onRegenerate, isLast, generation }) {
@@ -63,7 +70,7 @@ function MessageBubble(props) {
 }
 
 function CharacterCards({ characters, onPick }) {
-  return <><FloatingCreaturesPortal generation={activeGeneration} /><section className="character-section" aria-label="Suggested characters"><div className="section-kicker">A different lens</div><div className="character-grid">{characters.map((character) => <button className="character-card" key={character.name} onClick={() => onPick(character)}><span className="character-emoji">{character.emoji}</span><span><strong>{character.name}</strong><small>{character.personality}</small><em>{character.whyThisFits}</em></span></button>)}</div></section></>;
+  return <><FloatingCreaturesPortal generation={activeGeneration} /><BackendStatus /><section className="character-section" aria-label="Suggested characters"><div className="section-kicker">A different lens</div><div className="character-grid">{characters.map((character) => <button className="character-card" key={character.name} onClick={() => onPick(character)}><span className="character-emoji">{character.emoji}</span><span><strong>{character.name}</strong><small>{character.personality}</small><em>{character.whyThisFits}</em></span></button>)}</div></section></>;
 }
 
 function Sidebar({ chats, activeId, onSelect, onDelete, onClear, onNew, mobileOpen, onClose }) {
@@ -105,6 +112,7 @@ export default function Home() {
   activeGeneration = ageFilter;
 
   useEffect(() => { request('/chats').then(setChats).catch(() => {}); if ('speechSynthesis' in window) { const load = () => setVoices(window.speechSynthesis.getVoices()); load(); window.speechSynthesis.onvoiceschanged = load; } }, []);
+  useEffect(() => { warmApi().catch((error) => setNotice(`Waking up the server, this can take up to a minute. ${error.message}`)); }, []);
   useEffect(() => { const saved = localStorage.getItem('lumina-theme'); const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches; setDark(saved ? saved === 'dark' : preferred); }, []);
   useEffect(() => { localStorage.setItem('lumina-theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
   useEffect(() => { setTheme(getGenerationTheme(ageFilter).theme); }, [ageFilter]);

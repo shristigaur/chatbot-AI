@@ -49,6 +49,26 @@ npm run dev
 
 The client runs on `http://localhost:3000` and the API on `http://localhost:4000`.
 
+## Vercel and Render deployment
+
+For Vercel, set this environment variable in **Production** and **Preview**:
+
+```env
+NEXT_PUBLIC_API_URL=https://chatbot-ai-v8mi.onrender.com
+```
+
+Vercel embeds `NEXT_PUBLIC_*` values during the Next.js build, so changing the variable requires a new deployment/redeploy. Do not put the Render URL in application code.
+
+For Render, set `CLIENT_URL` to the Vercel origin, for example:
+
+```env
+CLIENT_URL=https://your-app.vercel.app,https://preview-your-app.vercel.app
+```
+
+MongoDB Atlas must allow the Render service to connect. In Atlas, open **Network Access** and add `0.0.0.0/0` (or the narrower Render egress ranges when available). Keep database credentials only in Render environment variables.
+
+The production client calls `/api/health` on first load to wake a sleeping Render instance. Slow or failed requests retry with backoff and show a waking/unreachable message instead of trying the Vercel origin or parsing an HTML error page as JSON.
+
 ## Architecture
 
 - `server/src/services/aiService.js` owns Hugging Face SSE streaming and strict character JSON parsing.
