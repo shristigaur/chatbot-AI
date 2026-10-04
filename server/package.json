@@ -3,11 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:smoke": "node scripts/smokeTest.js",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "start:prod": "node src/server.js",
     "fix-messages": "node scripts/fixMessages.js",
-    "check:hf": "node scripts/checkHf.js"
+    "check:hf": "node scripts/checkHf.js",
+    "check:ai": "node scripts/checkAi.js"
   },
   "dependencies": {
     "compression": "^1.7.4",

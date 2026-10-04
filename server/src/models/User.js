@@ -1,5 +1,15 @@
 import mongoose from 'mongoose';
 
+const progressSchema = new mongoose.Schema({
+  streak: { type: Number, default: 0 },
+  lastActiveDate: { type: String, default: '' },
+  xp: { type: Number, default: 0 },
+  level: { type: Number, default: 1 },
+  badges: { type: [String], default: [] },
+  questionsAsked: { type: Number, default: 0 },
+  askedByVoice: { type: Number, default: 0 }
+}, { _id: false });
+
 const preferencesSchema = new mongoose.Schema({
   theme: { type: String, default: 'light' },
   wallpaper: { type: String, default: 'aurora' },
@@ -10,6 +20,7 @@ const preferencesSchema = new mongoose.Schema({
   highContrast: { type: Boolean, default: false },
   dyslexiaFriendly: { type: Boolean, default: false },
   autoRead: { type: Boolean, default: false },
+  progress: { type: progressSchema, default: () => ({}) }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

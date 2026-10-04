@@ -20,7 +20,12 @@ export async function streamChat(req, res, next) {
     let disconnected = false;
     req.on('close', () => { disconnected = true; });
     const reply = toText(await streamReply({ messages, ageFilter, character: activeCharacter, onText: (token) => { if (!disconnected && typeof token === 'string') res.write(`data: ${JSON.stringify({ token, type: 'token', text: token })}\n\n`); } }));
-    if (!reply) throw new Error('The AI returned an empty reply.');
+    if (!reply) {
+      const err = new Error('The AI returned an empty reply.');
+      err.friendlyMessage = ageFilter === 'Children' ? "Lumina is taking a nap right now. Please ask a grown-up to help, or try again later!" : 'The AI returned an empty reply.';
+      err.status = 500;
+      throw err;
+    }
     const updated = await saveChat(req, previous, { message, reply, ageFilter, activeCharacter });
     if (!disconnected) {
       res.write(`data: ${JSON.stringify({ done: true, type: 'done', reply, chatId: updated?.id || chatId || null })}\n\n`);
@@ -28,10 +33,8 @@ export async function streamChat(req, res, next) {
     }
   } catch (error) {
     if (headersSent && !res.writableEnded) {
-      const readableError = error.message || 'AI request failed.';
-      const friendlyError = `Sorry, I could not complete that request: ${readableError}`;
-      res.write(`data: ${JSON.stringify({ error: readableError })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'token', text: friendlyError })}\n\n`);
+      const friendlyError = error.friendlyMessage || (ageFilter === 'Children' ? "Lumina is taking a nap right now. Please ask a grown-up to help, or try again later!" : `Sorry, I could not complete that request: ${error.message || 'AI request failed.'}`);
+      res.write(`data: ${JSON.stringify({ error: friendlyError, code: error.status || 500 })}\n\n`);
       return res.end();
     }
     return next(error);

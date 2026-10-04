@@ -1,9 +1,30 @@
 import { env } from '../config/env.js';
 import { toText } from '../utils/toText.js';
 import { buildSystemPrompt } from './promptBuilder.js';
+import { modelResolver } from './modelResolver.js';
 
-const missingConfigMessage = 'AI is not configured. Add HF_API_TOKEN to server/.env and restart the server.';
+const missingConfigMessage = 'AI is not configured. Add AI_API_KEY to server/.env and restart the server.';
 let charactersFallbackLogged = false;
+
+class FriendlyError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+    this.friendlyMessage = message;
+  }
+}
+
+function getFriendlyMessage(status, isChildrenMode) {
+  if (isChildrenMode) return "Lumina is taking a nap right now. Please ask a grown-up to help, or try again later!";
+  if (status === 400) return 'The AI request was rejected (check the model name in settings).';
+  if (status === 401) return 'AI key is invalid.';
+  if (status === 402) return 'AI credits are finished. Please add credits or switch the AI provider.';
+  if (status === 403) return 'Model access denied.';
+  if (status === 404) return 'The AI model was not found.';
+  if (status === 429) return 'Too many requests, please wait a moment.';
+  if (status >= 500) return 'AI provider is having issues.';
+  return 'An unexpected error occurred.';
+}
 
 export async function streamReply({ messages, ageFilter, character, onText }) {
   const context = [
@@ -11,19 +32,54 @@ export async function streamReply({ messages, ageFilter, character, onText }) {
     ...messages.slice(-12).map(({ role, content }) => ({ role, content: toText(content) })),
   ];
 
-  if (!isHfConfigured()) throw new Error(missingConfigMessage);
+  if (!isHfConfigured()) throw new FriendlyError(missingConfigMessage, 500);
 
-  const response = await requestHuggingFace({ messages: context, stream: true, max_tokens: 1600 });
-  if (!response.body) throw new Error('Hugging Face returned an empty response stream.');
-
+  let currentMaxTokens = ageFilter === 'Children' ? 600 : 1600;
   let fullText = '';
-  await readSse(response.body, (chunk) => {
-    const token = toText(chunk?.choices?.[0]?.delta?.content ?? '');
-    if (token) {
-      fullText += token;
-      onText(token);
+  
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await requestHuggingFace({ messages: context, stream: true, max_tokens: currentMaxTokens }, ageFilter);
+    if (!response.body) throw new FriendlyError('Hugging Face returned an empty response stream.', 500);
+
+    let currentText = '';
+    let thinkMode = false;
+    await readSse(response.body, (chunk) => {
+      const token = chunk?.choices?.[0]?.delta?.content ?? '';
+      
+      if (token.includes('<think>')) thinkMode = true;
+      if (thinkMode && token.includes('</think>')) {
+        thinkMode = false;
+        // Optionally extract text after </think> if they are in the same token
+        const parts = token.split('</think>');
+        if (parts.length > 1 && parts[1]) {
+           const textToken = toText(parts[1]);
+           currentText += textToken;
+           onText(textToken);
+        }
+        return;
+      }
+      
+      if (!thinkMode && token && !token.includes('<think>')) {
+        const textToken = toText(token);
+        currentText += textToken;
+        onText(textToken);
+      }
+    });
+    
+    // Check for empty reply
+    if (!currentText.trim()) {
+      if (attempt === 1) {
+        console.warn('AI returned empty reply, retrying with higher max_tokens...');
+        currentMaxTokens += 1000;
+        continue;
+      }
+      throw new FriendlyError(getFriendlyMessage(500, ageFilter === 'Children'), 500);
     }
-  });
+    
+    fullText = currentText;
+    break; // Success
+  }
+  
   return fullText;
 }
 
@@ -32,42 +88,99 @@ export async function predictCharacters(messages, ageFilter) {
     logCharacterFallback(missingConfigMessage);
     return fallbackCharacters(ageFilter);
   }
-  const response = await requestHuggingFace({
-    max_tokens: 700,
-    messages: [
-      { role: 'system', content: 'Return only valid JSON with exactly three characters in a characters array. Each character needs name, emoji, personality, speakingStyle, suggestedTheme, and whyThisFits.' },
-      { role: 'user', content: `Age filter: ${ageFilter}. Conversation:\n${messages.slice(-8).map((item) => `${item.role}: ${toText(item.content)}`).join('\n')}` },
-    ],
-  });
-  return parseCharacters(extractText(response), ageFilter);
+  try {
+    const response = await requestHuggingFace({
+      max_tokens: 700,
+      messages: [
+        { role: 'system', content: 'Return only valid JSON with exactly three characters in a characters array. Each character needs name, emoji, personality, speakingStyle, suggestedTheme, and whyThisFits.' },
+        { role: 'user', content: `Age filter: ${ageFilter}. Conversation:\n${messages.slice(-8).map((item) => `${item.role}: ${toText(item.content)}`).join('\n')}` },
+      ],
+    }, ageFilter);
+    return parseCharacters(extractText(response), ageFilter);
+  } catch (err) {
+    logCharacterFallback(`predictCharacters error: ${err.message}`);
+    return fallbackCharacters(ageFilter);
+  }
 }
 
 function extractText(data) {
   return toText(data?.choices?.[0]?.message?.content);
 }
 
-async function requestHuggingFace(body) {
+async function requestHuggingFace(body, ageFilter, useFallback = false, omitKwargs = false, forceModel = false) {
   let response;
+  const token = useFallback ? env.fallbackToken : env.huggingFaceToken;
+  const url = useFallback ? env.fallbackUrl : env.huggingFaceUrl;
+  const configuredModel = useFallback ? env.fallbackModel : env.huggingFaceModel;
+  
+  if (!url || !token || !configuredModel) {
+    if (useFallback) throw new FriendlyError(getFriendlyMessage(500, ageFilter === 'Children'), 500);
+    throw new FriendlyError(missingConfigMessage, 500);
+  }
+
+  const model = await modelResolver.resolveModel(url, token, configuredModel, forceModel);
+
+  const standardBody = {
+    model: model,
+    messages: body.messages,
+  };
+  if (body.max_tokens !== undefined) standardBody.max_tokens = body.max_tokens;
+  if (body.temperature !== undefined) standardBody.temperature = body.temperature;
+  if (body.stream !== undefined) standardBody.stream = body.stream;
+  
+  const isHfRouter = url.includes('router.huggingface.co');
+  if (isHfRouter && !omitKwargs) {
+    standardBody.chat_template_kwargs = { enable_thinking: false };
+  }
+
   try {
-    response = await fetch(env.huggingFaceUrl, {
+    response = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.huggingFaceToken}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: body.stream ? 'text/event-stream' : 'application/json',
       },
-      body: JSON.stringify({ model: env.huggingFaceModel, ...body }),
+      body: JSON.stringify(standardBody),
     });
   } catch (error) {
-    throw new Error(`Could not reach Hugging Face: ${error.message}`);
+    if (!useFallback && env.fallbackUrl && env.fallbackToken && env.fallbackModel) {
+       console.warn('Primary AI failed, retrying on fallback...');
+       return requestHuggingFace(body, ageFilter, true);
+    }
+    throw new FriendlyError(getFriendlyMessage(500, ageFilter === 'Children'), 500);
   }
 
   if (!response.ok) {
     const rawBody = await response.text();
-    console.error('Unexpected Hugging Face response:', { status: response.status, body: rawBody.slice(0, 500) });
-    let detail = response.statusText;
-    try { detail = toText(JSON.parse(rawBody)); } catch { if (rawBody) detail = rawBody.slice(0, 500); }
-    throw new Error(`HF ${response.status}: ${friendlyHfError(response.status, detail || response.statusText)}`);
+    console.error(`Unexpected AI response [${response.status}]:`, rawBody.slice(0, 300));
+    
+    // Self-healing for model missing
+    if (response.status === 404 || rawBody.includes('model_not_found') || rawBody.includes('does not exist')) {
+      if (!forceModel) {
+        console.warn('Model not found or error, forcing model re-resolution...');
+        return requestHuggingFace(body, ageFilter, useFallback, omitKwargs, true);
+      }
+    }
+    
+    const isKwargsError = rawBody.includes('chat_template_kwargs');
+    if (response.status === 400 && isKwargsError && !omitKwargs) {
+      console.warn('Provider rejected chat_template_kwargs, retrying without it...');
+      return requestHuggingFace(body, ageFilter, useFallback, true, forceModel);
+    }
+    
+    if (response.status === 400 && rawBody.toLowerCase().includes('model')) {
+      console.log('Check AI_MODEL/HF_MODEL for this provider');
+    }
+    
+    // If 402, 429, or 5xx, try fallback
+    if ([402, 429].includes(response.status) || response.status >= 500) {
+      if (!useFallback && env.fallbackUrl && env.fallbackToken && env.fallbackModel) {
+        console.warn(`Primary AI returned ${response.status}, retrying on fallback...`);
+        return requestHuggingFace(body, ageFilter, true);
+      }
+    }
+    throw new FriendlyError(getFriendlyMessage(response.status, ageFilter === 'Children'), response.status);
   }
   return response;
 }
@@ -111,12 +224,7 @@ function isHfConfigured() {
 }
 
 function friendlyHfError(status, detail) {
-  if (status === 401) return 'Invalid Hugging Face token. Check HF_API_TOKEN in server/.env.';
-  if (status === 403) return 'The model is gated or your token lacks Inference Providers permission.';
-  if (status === 404) return 'The Hugging Face model or endpoint was not found. Check HF_MODEL and HF_API_URL.';
-  if (status === 429) return 'Hugging Face rate limit reached. Try again later.';
-  if (status >= 500) return 'Hugging Face is experiencing a provider issue. Try again later.';
-  return detail;
+  return detail; // Deprecated, using getFriendlyMessage directly
 }
 
 function logCharacterFallback(reason) {

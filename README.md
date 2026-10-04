@@ -14,17 +14,17 @@ cp server/.env.example server/.env
 cp client/.env.example client/.env.local
 ```
 
-Set `MONGO_URI`, `HF_API_TOKEN`, `HF_API_URL`, and `HF_MODEL` in `server/.env`. The Hugging Face token is only read by the server and is never exposed to the browser. Without a token, chat returns an actionable configuration error instead of saving fallback text.
+Set `MONGO_URI`, `AI_API_KEY`, `AI_API_URL`, and `AI_MODEL` in `server/.env`. The API key is only read by the server and is never exposed to the browser. Without a key, chat returns an actionable configuration error instead of saving fallback text.
 
-Create `server/.env` from the example and add your rotated token:
+Create `server/.env` from the example and add your rotated key:
 
 ```env
-HF_API_TOKEN=hf_your_rotated_token
-HF_API_URL=https://router.huggingface.co/v1/chat/completions
-HF_MODEL=Qwen/Qwen2.5-7B-Instruct
+AI_API_KEY=your_rotated_token
+AI_API_URL=https://router.huggingface.co/v1/chat/completions
+AI_MODEL=Qwen/Qwen2.5-7B-Instruct
 ```
 
-The token included in your message is exposed and should be revoked or rotated in Hugging Face before use.
+The key included in your message is exposed and should be revoked or rotated in your provider before use.
 
 Check the provider without opening the UI:
 
@@ -39,7 +39,7 @@ pkill -f "node.*server/src/server.js" || true
 npm run dev
 ```
 
-Successful startup includes `HF token loaded: true`, the configured model and URL, followed by `Lumina server listening on 4000`. Verify configuration with `GET http://localhost:4000/api/health`.
+Successful startup includes `AI token loaded: true`, the configured model and URL, followed by `Lumina server listening on 4000`. Verify configuration with `GET http://localhost:4000/api/health`.
 
 Start both applications:
 
@@ -98,9 +98,11 @@ npm --prefix server run fix-messages
 
 ## Manual AI failure checklist
 
-- Wrong `HF_API_TOKEN`: server returns a readable provider error and does not save it as a chat message.
-- Gated or unavailable `HF_MODEL`: verify the model access and inspect the Hugging Face status error.
+- Wrong `AI_API_KEY`: server returns a readable provider error and does not save it as a chat message.
+- Gated or unavailable `AI_MODEL`: verify the model access and inspect the provider status error.
 - Network offline: the chat shows a friendly error bubble instead of crashing Markdown rendering.
 - Empty provider reply: the controller rejects it and does not persist an empty assistant message.
 - Long Markdown reply: headings, lists, tables, and code should render as text-safe Markdown.
 - Reload old history: messages are normalized through `toText()` before rendering; run `npm --prefix server run fix-messages` to clean MongoDB permanently.
+## Privacy Note for Web Speech API
+The Web Speech API in Chrome sends audio to Google's speech service for processing. To use this feature, the site must run on HTTPS (Vercel is fine, localhost is fine). No voice audio is stored by Lumina; only the final transcribed text is sent to the backend.
