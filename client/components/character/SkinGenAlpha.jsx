@@ -1,4 +1,5 @@
 import { m } from 'framer-motion';
+import { steps } from '../../lib/easing.js';
 
 export default function SkinGenAlpha({ mood, mousePos, animationsActive }) {
   const eyeX = (mousePos.x - 0.5) * 8;
@@ -9,7 +10,7 @@ export default function SkinGenAlpha({ mood, mousePos, animationsActive }) {
   // Blocky jumpy motion
   const bobble = animationsActive ? { 
     y: [0, -5, 0], 
-    transition: { duration: 1, repeat: Infinity, ease: 'steps(3)' } 
+    transition: { duration: 1, repeat: Infinity, ease: steps(3) } 
   } : {};
   
   const blink = animationsActive ? { 
@@ -32,7 +33,7 @@ export default function SkinGenAlpha({ mood, mousePos, animationsActive }) {
         {isTalking ? (
           <m.rect x="42" y="60" width="16" height="8" fill="var(--accent)" stroke="black" strokeWidth="2"
             animate={animationsActive ? { scaleY: [1, 0.5, 1] } : {}}
-            transition={{ duration: 0.15, repeat: Infinity, ease: 'steps(2)' }}
+            transition={{ duration: 0.15, repeat: Infinity, ease: steps(2) }}
           />
         ) : (
           <rect x="42" y="60" width="16" height="4" fill="black" />
@@ -40,7 +41,7 @@ export default function SkinGenAlpha({ mood, mousePos, animationsActive }) {
       </m.g>
       
       {isThinking && (
-        <m.g animate={animationsActive ? { y: [0, -4, 0] } : {}} transition={{ duration: 0.5, repeat: Infinity, ease: 'steps(2)' }}>
+        <m.g animate={animationsActive ? { y: [0, -4, 0] } : {}} transition={{ duration: 0.5, repeat: Infinity, ease: steps(2) }}>
           <rect x="75" y="10" width="6" height="6" fill="black" />
           <rect x="85" y="5" width="6" height="6" fill="black" />
         </m.g>
