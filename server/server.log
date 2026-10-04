@@ -1,0 +1,9 @@
+
+> start
+> node src/server.js
+
+AI token loaded: true
+AI model: gemini-3.8-flash
+AI host: generativelanguage.googleapis.com
+MongoDB connected
+Lumina server listening on 4000

@@ -9,15 +9,18 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { connectDatabase } from './config/db.js';
 import { env } from './config/env.js';
 import { identity, newAnonymousId } from './middleware/identity.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import chatRoutes from './routes/chatRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 import chatHistoryRoutes from './routes/chatHistoryRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import { modelResolver } from './services/modelResolver.js';
+import { getProviderStatus } from './services/aiService.js';
 
 const app = express();
 const hasConfiguredHfUrl = Boolean(String(process.env.AI_API_URL || process.env.HF_API_URL || '').trim());
@@ -30,13 +33,14 @@ const corsOptions = {
     return callback(new Error('CORS origin is not allowed.'));
   },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-anonymous-id'],
-  credentials: false,
+  allowedHeaders: ['Content-Type', 'x-anonymous-id', 'Authorization'],
+  credentials: true,
 };
 app.use(helmet());
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(compression());
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit({ windowMs: env.rateLimitWindowMs, limit: env.rateLimitMax, standardHeaders: 'draft-8', legacyHeaders: false }));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -45,12 +49,14 @@ app.get('/api/health', async (req, res) => {
   const model = await modelResolver.resolveModel(env.huggingFaceUrl, env.huggingFaceToken, env.huggingFaceModel);
   let provider = env.huggingFaceUrl;
   try { provider = new URL(env.huggingFaceUrl).host; } catch (e) {}
-  res.json({ ok: true, provider, model, ready: hfConfigured() });
+  res.json({ ok: true, provider, model, ready: hfConfigured(), providers: getProviderStatus() });
 });
 app.use('/api', (req, res, next) => {
   if (!req.get('x-anonymous-id') && req.method === 'GET') req.headers['x-anonymous-id'] = newAnonymousId();
   next();
 }, identity);
+app.get('/api/test', (req, res) => res.json({ ok: true }));
+app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/chats', chatHistoryRoutes);
 app.use('/api/user', userRoutes);

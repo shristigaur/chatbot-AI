@@ -23,10 +23,21 @@ const preferencesSchema = new mongoose.Schema({
   progress: { type: progressSchema, default: () => ({}) }
 }, { _id: false });
 
+const characterSchema = new mongoose.Schema({
+  baseId: { type: String, default: 'pip' },
+  nickname: { type: String, default: 'Pip' },
+  formId: { type: String, default: 'normal' },
+  skinId: { type: String, default: 'default' }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   name: { type: String, default: 'Guest' },
-  email: String,
-  anonymousId: { type: String, unique: true, required: true },
+  email: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
+  anonymousId: { type: String, unique: true, sparse: true },
+  ageGroup: { type: String, enum: ['Child', 'Teenager', 'Adult', 'Senior'], default: 'Adult' },
+  character: { type: characterSchema, default: () => ({}) },
+  interests: { type: [String], default: [] },
+  interestScores: { type: Map, of: Number, default: {} },
   preferences: { type: preferencesSchema, default: () => ({}) },
 }, { timestamps: true });
 

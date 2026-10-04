@@ -1,45 +1,40 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { env } from '../src/config/env.js';
-import { modelResolver } from '../src/services/modelResolver.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
+import { env } from '../src/config/env.js';
+import { modelResolver } from '../src/services/modelResolver.js';
+
 async function run() {
+  console.log('Running AI Check...');
+  
   const token = env.huggingFaceToken;
   const url = env.huggingFaceUrl;
-  const configModel = env.huggingFaceModel;
-  let pass = true;
+  const configuredModel = env.huggingFaceModel;
 
-  if (!token || !url || !configModel) {
-    console.error('FAIL: Missing AI_API_KEY, AI_API_URL, or AI_MODEL in .env');
+  if (!token || token === 'PASTE_YOUR_NEW_TOKEN_HERE') {
+    console.error('FAIL: AI_API_KEY / HF_API_TOKEN is missing or not configured.');
     process.exit(1);
   }
-
+  if (!url) {
+    console.error('FAIL: AI_API_URL / HF_API_URL is missing.');
+    process.exit(1);
+  }
+  
   try {
-    const modelsUrl = url.replace(/\/chat\/completions\/?$/, '/models');
-    console.log(`Fetching models from ${modelsUrl}...`);
-    const res = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    console.log(`Configured model: ${configuredModel}`);
+    console.log(`Resolving model via ${url}...`);
     
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`Found ${data.data?.length || 0} models.`);
-    } else {
-      console.log(`Failed to fetch models: ${res.status}`);
-    }
+    // Resolve model
+    const model = await modelResolver.resolveModel(url, token, configuredModel, true);
+    console.log(`Resolved model: ${model}`);
 
-    console.log('Running resolveModel()...');
-    const model = await modelResolver.resolveModel(url, token, configModel, true);
-    console.log(`Selected model: ${model}`);
-    
-    if (model !== configModel) {
-      console.log(`Hint: The configured model '${configModel}' was not selected. You can remove HF_MODEL/AI_MODEL from .env to rely on auto-select.`);
-    }
-
-    console.log('Sending test message...');
-    const testRes = await fetch(url, {
+    // Send "hi"
+    console.log(`Sending 'hi' to model...`);
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -53,20 +48,23 @@ async function run() {
       })
     });
 
-    if (testRes.ok) {
-      const testData = await testRes.json();
-      const reply = testData.choices?.[0]?.message?.content || '';
-      console.log(`PASS: Received reply: ${reply.slice(0, 200).replace(/\n/g, ' ')}`);
-    } else {
-      console.error(`FAIL: Request failed with status ${testRes.status}`);
-      pass = false;
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`FAIL: API returned ${res.status}`);
+      console.error(errorText.slice(0, 300));
+      process.exit(1);
     }
+
+    const data = await res.json();
+    const reply = data?.choices?.[0]?.message?.content || JSON.stringify(data);
+    console.log('\nPASS');
+    console.log(`Model: ${model}`);
+    console.log(`Reply: ${String(reply).slice(0, 200).replace(/\n/g, ' ')}`);
+
   } catch (err) {
-    console.error(`FAIL: Exception during test: ${err.message}`);
-    pass = false;
+    console.error(`FAIL: Exception occurred: ${err.message}`);
+    process.exit(1);
   }
-  
-  if (!pass) process.exit(1);
 }
 
 run();

@@ -43,7 +43,7 @@ export class ModelResolver {
       }
 
       const data = await res.json();
-      if (!data.data || !Array.isArray(data.data)) {
+      if (!data || (!data.data && !data.models && !Array.isArray(data))) {
         this.cache.set(cacheKey, { model: configuredModel, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
         let aiHost = apiUrl;
         try { aiHost = new URL(apiUrl).host; } catch (err) {}
@@ -52,13 +52,13 @@ export class ModelResolver {
         return configuredModel;
       }
 
-      const allModels = data.data.map(m => m.id);
+      const allModels = (data.data || data.models || data).map(m => (m.id || m.name || '').replace(/^models\//, ''));
       
       const isExcluded = (id) => {
         const lower = id.toLowerCase();
         return lower.includes('whisper') || lower.includes('tts') || lower.includes('guard') || 
                lower.includes('embed') || lower.includes('moderation') || lower.includes('audio') ||
-               lower.includes('vision');
+               lower.includes('vision') || lower.includes('imagen') || lower.includes('aqa');
       };
 
       const chatModels = allModels.filter(id => !isExcluded(id));

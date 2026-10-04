@@ -23,6 +23,7 @@ const values = {
   huggingFaceToken: () => read('AI_API_KEY', read('HF_API_TOKEN', defaults.huggingFaceToken)),
   huggingFaceUrl: () => read('AI_API_URL', read('HF_API_URL', defaults.huggingFaceUrl)),
   huggingFaceModel: () => read('AI_MODEL', read('HF_MODEL', defaults.huggingFaceModel)),
+  modelFallback: () => read('AI_MODEL_FALLBACK', ''),
   fallbackToken: () => read('AI_FALLBACK_KEY', ''),
   fallbackUrl: () => read('AI_FALLBACK_URL', ''),
   fallbackModel: () => read('AI_FALLBACK_MODEL', ''),
