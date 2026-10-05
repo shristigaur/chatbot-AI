@@ -1,6 +1,6 @@
 # Lumina Chat
 
-Lumina is a responsive AI chat workspace with Hugging Face model streaming, Markdown responses, personas, generation-style filters, speech controls, history, and accessibility preferences.
+Lumina is a responsive AI chat workspace with OpenAI model streaming, Markdown responses, personas, generation-style filters, speech controls, history, and accessibility preferences.
 
 ## Run locally
 
@@ -14,14 +14,14 @@ cp server/.env.example server/.env
 cp client/.env.example client/.env.local
 ```
 
-Set `MONGO_URI`, `AI_API_KEY`, `AI_API_URL`, and `AI_MODEL` in `server/.env`. The API key is only read by the server and is never exposed to the browser. Without a key, chat returns an actionable configuration error instead of saving fallback text.
+Set `MONGO_URI`, `GROQ_API_KEY`, `GROQ_BASE_URL`, and `OPENAI_MODEL` in `server/.env`. The API key is only read by the server and is never exposed to the browser. Without a key, chat returns an actionable configuration error instead of saving fallback text.
 
 Create `server/.env` from the example and add your rotated key:
 
 ```env
-AI_API_KEY=your_rotated_token
-AI_API_URL=https://router.huggingface.co/v1/chat/completions
-AI_MODEL=Qwen/Qwen2.5-7B-Instruct
+GROQ_API_KEY=your_groq_key
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL=openai/gpt-oss-20b
 ```
 
 The key included in your message is exposed and should be revoked or rotated in your provider before use.
@@ -29,7 +29,7 @@ The key included in your message is exposed and should be revoked or rotated in 
 Check the provider without opening the UI:
 
 ```bash
-npm --prefix server run check:hf
+npm --prefix server run check:openai
 ```
 
 Restart both servers after editing `server/.env`:
@@ -71,7 +71,7 @@ The production client calls `/api/health` on first load to wake a sleeping Rende
 
 ## Architecture
 
-- `server/src/services/aiService.js` owns Hugging Face SSE streaming and strict character JSON parsing.
+- `server/src/services/aiService.js` owns OpenAI Chat Completions streaming and strict character JSON parsing.
 - `server/src/services/promptBuilder.js` composes safety, age-filter, and persona instructions.
 - `server/src/middleware/emergencyInterceptor.js` short-circuits medical emergency phrases before any AI call.
 - `server/src/controllers/chatController.js` handles SSE, history, and the development memory fallback.
@@ -98,8 +98,8 @@ npm --prefix server run fix-messages
 
 ## Manual AI failure checklist
 
-- Wrong `AI_API_KEY`: server returns a readable provider error and does not save it as a chat message.
-- Gated or unavailable `AI_MODEL`: verify the model access and inspect the provider status error.
+- Wrong `GROQ_API_KEY`: server returns a readable provider error and does not save it as a chat message.
+- Unavailable `OPENAI_MODEL`: verify model access and inspect the provider status error.
 - Network offline: the chat shows a friendly error bubble instead of crashing Markdown rendering.
 - Empty provider reply: the controller rejects it and does not persist an empty assistant message.
 - Long Markdown reply: headings, lists, tables, and code should render as text-safe Markdown.

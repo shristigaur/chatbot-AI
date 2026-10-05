@@ -19,13 +19,11 @@ import { errorHandler } from './middleware/errorHandler.js';
 import chatRoutes from './routes/chatRoutes.js';
 import chatHistoryRoutes from './routes/chatHistoryRoutes.js';
 import userRoutes from './routes/userRoutes.js';
-import { modelResolver } from './services/modelResolver.js';
 import { getProviderStatus } from './services/aiService.js';
+import { getAiConfigError } from './config/env.js';
 
 const app = express();
-const hasConfiguredHfUrl = Boolean(String(process.env.AI_API_URL || process.env.HF_API_URL || '').trim());
-const hasConfiguredHfModel = Boolean(String(process.env.AI_MODEL || process.env.HF_MODEL || '').trim());
-const hfConfigured = () => Boolean(env.huggingFaceToken && env.huggingFaceToken !== 'PASTE_YOUR_NEW_TOKEN_HERE' && env.huggingFaceModel && env.huggingFaceUrl && hasConfiguredHfUrl && hasConfiguredHfModel);
+const openaiConfigured = () => !getAiConfigError();
 const allowedOrigins = env.clientUrl.split(',').map((origin) => origin.trim().replace(/\/+$/, '')).filter(Boolean);
 const corsOptions = {
   origin(origin, callback) {
@@ -46,10 +44,7 @@ app.use(rateLimit({ windowMs: env.rateLimitWindowMs, limit: env.rateLimitMax, st
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/', (req, res) => res.json({ name: 'Lumina API', status: 'running', health: '/api/health' }));
 app.get('/api/health', async (req, res) => {
-  const model = await modelResolver.resolveModel(env.huggingFaceUrl, env.huggingFaceToken, env.huggingFaceModel);
-  let provider = env.huggingFaceUrl;
-  try { provider = new URL(env.huggingFaceUrl).host; } catch (e) {}
-  res.json({ ok: true, provider, model, ready: hfConfigured(), providers: getProviderStatus() });
+  res.json({ ok: true, provider: new URL(env.groqBaseUrl).host, model: env.openaiModel, ready: openaiConfigured(), providers: getProviderStatus() });
 });
 if (env.nodeEnv === 'development') {
   app.use((req, res, next) => {
@@ -94,9 +89,6 @@ connectDatabase().then(() => {
   process.exit(1);
 });
 
-console.info(`AI token loaded: ${hfConfigured()}`);
-console.info(`AI model: ${env.huggingFaceModel}`);
-let aiHost = env.huggingFaceUrl;
-try { aiHost = new URL(env.huggingFaceUrl).host; } catch (e) {}
-console.info(`AI host: ${aiHost}`);
-if (!hfConfigured()) console.warn('AI_API_KEY, AI_MODEL, or AI_API_URL is missing. Edit server/.env and restart.');
+console.info(`OpenAI key loaded: ${openaiConfigured()}`);
+console.info(`Groq model: ${env.openaiModel}`);
+if (!openaiConfigured()) console.warn('GROQ_API_KEY or OPENAI_MODEL is missing. Edit server/.env and restart.');

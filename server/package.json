@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "start:prod": "node src/server.js",
     "fix-messages": "node scripts/fixMessages.js",
-    "check:hf": "node scripts/checkHf.js",
+    "check:openai": "node scripts/checkAi.js",
     "check:ai": "node scripts/checkAi.js"
   },
   "dependencies": {
