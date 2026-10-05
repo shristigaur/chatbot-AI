@@ -1,3 +1,5 @@
+import { API } from './api';
+
 export async function apiFetch(url, options = {}) {
   let token = null;
   if (typeof window !== 'undefined') {
@@ -23,7 +25,7 @@ export async function apiFetch(url, options = {}) {
 
   if (response.status === 401 && typeof window !== 'undefined') {
     // try to refresh
-    const refreshRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/auth/refresh`, {
+    const refreshRes = await fetch(`${API}/auth/refresh`, {
       method: 'POST',
       credentials: 'include'
     });

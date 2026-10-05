@@ -33,7 +33,7 @@ const characterSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   name: { type: String, default: 'Guest' },
   email: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
-  anonymousId: { type: String, unique: true, sparse: true },
+  anonymousId: { type: String, index: { unique: true, partialFilterExpression: { anonymousId: { $type: "string" } } } },
   ageGroup: { type: String, enum: ['Child', 'Teenager', 'Adult', 'Senior'], default: 'Adult' },
   character: { type: characterSchema, default: () => ({}) },
   interests: { type: [String], default: [] },

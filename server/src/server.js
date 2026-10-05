@@ -11,12 +11,12 @@ import compression from 'compression';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import listEndpoints from 'express-list-endpoints';
 import { connectDatabase } from './config/db.js';
 import { env } from './config/env.js';
 import { identity, newAnonymousId } from './middleware/identity.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import chatRoutes from './routes/chatRoutes.js';
-import authRoutes from './routes/authRoutes.js';
 import chatHistoryRoutes from './routes/chatHistoryRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import { modelResolver } from './services/modelResolver.js';
@@ -51,23 +51,45 @@ app.get('/api/health', async (req, res) => {
   try { provider = new URL(env.huggingFaceUrl).host; } catch (e) {}
   res.json({ ok: true, provider, model, ready: hfConfigured(), providers: getProviderStatus() });
 });
+if (env.nodeEnv === 'development') {
+  app.use((req, res, next) => {
+    // console.log(`${req.method} ${req.url}`);
+    next();
+  });
+}
+
+
+
 app.use('/api', (req, res, next) => {
   if (!req.get('x-anonymous-id') && req.method === 'GET') req.headers['x-anonymous-id'] = newAnonymousId();
   next();
 }, identity);
 app.get('/api/test', (req, res) => res.json({ ok: true }));
-app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/chats', chatHistoryRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api', (req, res) => res.status(404).json({ error: 'API route not found.' }));
-app.use((req, res) => res.status(404).json({ error: 'Route not found.' }));
+app.use('/api', (req, res) => {
+  console.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ error: 'API route not found.' });
+});
+app.use((req, res) => {
+  console.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ error: 'Route not found.' });
+});
 app.use((err, req, res, next) => {
   console.error('Global error:', err.message);
   res.status(err.status || 500).json({ error: err.friendlyMessage || 'Server error (500)', code: err.status || 500 });
 });
 
-connectDatabase().then(() => app.listen(env.port, '0.0.0.0', () => console.info(`Lumina server listening on ${env.port}`))).catch((error) => {
+connectDatabase().then(() => {
+  app.listen(env.port, '0.0.0.0', () => {
+    console.info(`Lumina server listening on ${env.port}`);
+    if (env.nodeEnv === 'development') {
+      console.log('Registered Routes:');
+      console.log(listEndpoints(app));
+    }
+  });
+}).catch((error) => {
   console.error(`Startup failed: ${error.message}`);
   process.exit(1);
 });
