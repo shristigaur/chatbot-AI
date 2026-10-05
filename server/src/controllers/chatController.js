@@ -10,8 +10,9 @@ function userKey(req) { return String(req.user._id); }
 
 export async function streamChat(req, res, next) {
   let headersSent = false;
+  let ageFilter = req.body?.ageFilter || 'Adult';
   try {
-    const { chatId, message, ageFilter = 'Adult', activeCharacter = null } = req.body;
+    const { chatId, message, activeCharacter = null } = req.body;
     const previous = await getChat(chatId, req);
     const messages = [...(previous?.messages || []), { role: 'user', content: toText(message) }];
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -34,7 +35,7 @@ export async function streamChat(req, res, next) {
   } catch (error) {
     if (headersSent && !res.writableEnded) {
       const friendlyError = error.friendlyMessage || (ageFilter === 'Children' ? "Lumina is taking a nap right now. Please ask a grown-up to help, or try again later!" : `Sorry, I could not complete that request: ${error.message || 'AI request failed.'}`);
-      res.write(`data: ${JSON.stringify({ error: friendlyError, code: error.status || 500 })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: friendlyError, code: error.status || 500, retryAfter: error.retryAfter || null, retryable: error.status === 429 })}\n\n`);
       return res.end();
     }
     return next(error);

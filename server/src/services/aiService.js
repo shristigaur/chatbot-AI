@@ -3,7 +3,7 @@ import { toText } from '../utils/toText.js';
 import { buildSystemPrompt } from './promptBuilder.js';
 import { modelResolver } from './modelResolver.js';
 
-const missingConfigMessage = 'AI is not configured. Add AI_API_KEY to server/.env and restart the server.';
+const missingConfigMessage = 'AI service is not configured. Set AI_API_KEY (or HF_API_TOKEN), AI_API_URL (or HF_API_URL), and AI_MODEL (or HF_MODEL) in server/.env.';
 let charactersFallbackLogged = false;
 
 // Concurrency queue
@@ -225,30 +225,22 @@ async function requestProviderChain(body, ageFilter, onText = null) {
     }
   }
 
-  // Auto-retry once more after 10s if all failed
-  if (!hasEmittedTokens && !body._isAutoRetry) {
-    console.warn(`All providers failed. Waiting 10s for auto-retry...`);
-    await new Promise(r => setTimeout(r, 10000));
-    body._isAutoRetry = true;
-    return requestProviderChain(body, ageFilter, onText);
-  }
-
   const isChildren = ageFilter === 'Children';
   const msg = isChildren ? "Lumina is taking a nap right now. Please ask a grown-up to help, or try again later!" : "The AI is busy right now, please try again in a moment";
   
   if (lastError && lastError.status) {
-    throw new FriendlyError(msg, lastError.status);
+    const finalError = new FriendlyError(msg, lastError.status);
+    finalError.retryAfter = lastError.retryAfter;
+    throw finalError;
   }
   throw new FriendlyError(msg, 503);
 }
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const getJitter = (base) => base + Math.random() * 500;
 
 async function executeWithRetries(provider, body, ageFilter, onText, onRetry) {
   let attempt = 1;
-  const maxAttempts = 3;
-  let backoffs = [getJitter(1000), getJitter(2500), getJitter(5000)];
+  const maxAttempts = 5;
 
   while (attempt <= maxAttempts) {
     try {
@@ -264,7 +256,7 @@ async function executeWithRetries(provider, body, ageFilter, onText, onRetry) {
       onRetry(attempt, err);
       console.warn(`Attempt ${attempt} failed on ${provider.id} with ${status}. Retrying...`);
       
-      let delay = backoffs[attempt - 1];
+      let delay = 1000 * (2 ** (attempt - 1));
       if (err.retryAfter) {
         const ra = parseInt(err.retryAfter, 10);
         if (!isNaN(ra) && ra > 0) {

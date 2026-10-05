@@ -205,6 +205,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState('');
+  const [retryState, setRetryState] = useState(null);
   const [fontSize, setFontSize] = useState('normal');
   const [highContrast, setHighContrast] = useState(false);
   const [dyslexia, setDyslexia] = useState(false);
@@ -294,6 +295,13 @@ export default function Home() {
   useEffect(() => { if (generating) speech.stopSpeech(); }, [generating, speech.stopSpeech]);
   useEffect(() => () => speech.stopSpeech(), [chatId, speech.stopSpeech]);
   useEffect(() => { if (sttError) setNotice(sttError); }, [sttError]);
+  useEffect(() => {
+    if (!retryState || retryState.seconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setRetryState((current) => current && { ...current, seconds: Math.max(0, current.seconds - 1) });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [retryState]);
 
   const handleSpeak = useCallback((messageId, text) => {
     if (activeSpeechId === messageId) {
@@ -315,6 +323,7 @@ export default function Home() {
     if (!text.trim() || generating) return; 
     setInput(''); 
     setNotice(''); 
+    setRetryState(null);
     const userMessage = { role: 'user', content: text.trim(), createdAt: new Date().toISOString() }; 
     const currentHistory = overrideMessages !== null ? overrideMessages : messages;
     const nextMessages = [...currentHistory, userMessage]; 
@@ -326,9 +335,13 @@ export default function Home() {
     try { 
       const response = await fetch(`${API}/chat/stream`, { method: 'POST', signal: abortRef.current.signal, headers: { 'Content-Type': 'application/json', 'x-anonymous-id': anonymousId() }, body: JSON.stringify({ chatId, message: userMessage.content, ageFilter, activeCharacter }) }); 
       if (!response.ok) { 
-        const error = await response.json(); 
+        let error = {};
+        try { error = await response.json(); } catch {}
         if (error.isEmergency) { setMessages([...nextMessages, { role: 'assistant', content: error.guidance }]); return; } 
-        throw new Error(error.error || 'Unable to reach Lumina'); 
+        const requestError = new Error(error.error || 'Unable to reach Lumina');
+        requestError.status = response.status;
+        requestError.retryAfter = error.retryAfter;
+        throw requestError;
       } 
       const reader = response.body.getReader(); 
       const decoder = new TextDecoder(); 
@@ -350,7 +363,10 @@ export default function Home() {
           if (data.type === 'done') { setChatId(data.chatId); } 
           if (data.error) { 
             setMessages([...nextMessages, { role: 'assistant', content: answer, error: data.error, code: data.code }]);
-            throw new Error(data.error);
+            const streamError = new Error(data.error);
+            streamError.status = data.code;
+            streamError.retryAfter = data.retryAfter;
+            throw streamError;
           }
         } 
       } 
@@ -372,7 +388,15 @@ export default function Home() {
       soundEngine.playReceive();
       addXp(10, listening);
     } catch (error) { 
-      if (error.name !== 'AbortError') setNotice(error.message); 
+      if (error.name !== 'AbortError') {
+        if (error.status === 429) {
+          const seconds = Math.max(1, Math.min(60, Number(error.retryAfter) || 15));
+          setRetryState({ text: userMessage.content, history: currentHistory, seconds });
+          setNotice(`Lumina is busy right now. You can try again in ${seconds} seconds.`);
+        } else {
+          setNotice(error.message);
+        }
+      }
     } finally { 
       setGenerating(false); 
       abortRef.current = null; 
@@ -552,7 +576,7 @@ export default function Home() {
   
   {settings && !isChildrenMode && <aside className="settings-panel"><div className="settings-head"><div><span className="eyebrow">PERSONALIZE</span><h2>Your preferences</h2></div><button className="icon-button" onClick={() => setSettings(false)}>×</button></div><label>Language<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en-US">English (US)</option><option value="en-IN">English (India)</option><option value="hi-IN">Hindi</option></select></label><label>Voice<select value={voice} onChange={(event) => setVoice(event.target.value)}><option value="">System default</option>{voices.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label><label className="range-label">Speech speed <input type="range" min="0.6" max="1.5" step="0.1" value={rate} onChange={(event) => setRate(event.target.value)} /></label><label className="range-label">Speech pitch <input type="range" min="0.5" max="1.5" step="0.1" value={pitch} onChange={(event) => setPitch(event.target.value)} /></label><label className="toggle-row">Auto-read replies <input type="checkbox" checked={autoRead} onChange={(event) => setAutoRead(event.target.checked)} /></label><label className="toggle-row">Auto-send after speaking <input type="checkbox" checked={autoSend} onChange={(event) => setAutoSend(event.target.checked)} /></label><label className="toggle-row">High contrast <input type="checkbox" checked={highContrast} onChange={(event) => setHighContrast(event.target.checked)} /></label><label className="toggle-row">Dyslexia-friendly type <input type="checkbox" checked={dyslexia} onChange={(event) => setDyslexia(event.target.checked)} /></label><label className="toggle-row">Sound effects <input type="checkbox" checked={soundEnabled} onChange={(event) => setSoundEnabled(event.target.checked)} /></label><label>Text size<select value={fontSize} onChange={(event) => setFontSize(event.target.value)}><option value="normal">Comfortable</option><option value="large">Large</option></select></label><label>Animations<select value={animationMode} onChange={(event) => setAnimationMode(event.target.value)}><option value="Full">Full</option><option value="Light">Light</option><option value="Off">Off</option></select></label><button className="test-speech" onClick={() => speech.speak('test', 'Lumina is ready when you are.')}>Test voice</button><div style={{marginTop: '20px', padding: '10px', background: 'var(--surface-2)', borderRadius: '8px'}}><BackendStatus /></div></aside>}
   
-  {notice && <div className="toast" role="alert" style={isChildrenMode ? { fontSize: '20px', borderRadius: '16px', border: '3px solid var(--accent)', padding: '16px', background: 'white' } : {}}>{notice}<button onClick={() => setNotice('')}>×</button></div>}
+  {notice && <div className="toast" role="alert" style={isChildrenMode ? { fontSize: '20px', borderRadius: '16px', border: '3px solid var(--accent)', padding: '16px', background: 'white' } : {}}><span>{notice}</span>{retryState && <button onClick={() => { if (retryState.seconds === 0) sendMessage(retryState.text, retryState.history); }} disabled={retryState.seconds > 0}>{retryState.seconds > 0 ? `Retry in ${retryState.seconds}s` : 'Retry Now'}</button>}<button onClick={() => { setNotice(''); setRetryState(null); }}>×</button></div>}
   </m.main>
   </LazyMotion>;
 }

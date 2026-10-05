@@ -36,3 +36,15 @@ export const env = {};
 for (const [key, getter] of Object.entries(values)) {
   Object.defineProperty(env, key, { enumerable: true, get: getter });
 }
+
+export function getAiConfigError() {
+  const hasPrimary = Boolean(
+    env.huggingFaceToken &&
+    env.huggingFaceToken !== 'PASTE_YOUR_NEW_TOKEN_HERE' &&
+    env.huggingFaceUrl &&
+    env.huggingFaceModel
+  );
+  const hasFallback = Boolean(env.fallbackToken && env.fallbackUrl && env.fallbackModel);
+  if (hasPrimary || hasFallback) return null;
+  return 'AI service is not configured. Set AI_API_KEY (or HF_API_TOKEN), AI_API_URL (or HF_API_URL), and AI_MODEL (or HF_MODEL) in server/.env.';
+}
